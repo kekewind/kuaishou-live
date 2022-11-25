@@ -133,7 +133,7 @@ class Tool:
         scWebLiveWatchingUsers.ParseFromString(message)
         data = json_format.MessageToDict(scWebLiveWatchingUsers, preserving_proto_field_name=True)
         log = json.dumps(data, ensure_ascii=False)
-        logging.info('[parseSCWebLiveWatchingUsers] [直播间新用户进入] [RoomId:' + self.liveRoomId + '] ｜ ' + log)
+        logging.info('[parseSCWebLiveWatchingUsers] [不知道是啥的数据包🤷] [RoomId:' + self.liveRoomId + '] ｜ ' + log)
         return data
 
     # 直播间弹幕信息
