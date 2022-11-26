@@ -30,21 +30,26 @@ class Tool:
     webSocketUrl = ''
     # 房间号
     liveRoomId = None
+    # 直播网页地址
+    liveUrl = ''
     # 公共请求头
     headers = {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36',
-        'Cookie': cookie
     }
     # 存储用户直播信息 比如直播地址
     userLiveInfo = ''
 
-    def __int__(self):
-        pass
+    # 初始化
+    def init(self, liveUrl: str, cookie: str):
+        self.liveUrl = liveUrl
+        self.cookie = cookie
+        self.headers['Referer'] = self.liveUrl
+        self.headers['cookie'] = self.cookie
 
     # 获取房间号
-    def getLiveRoomId(self, liveUrl: str):
-        liveUrl = liveUrl.strip('/')
+    def getLiveRoomId(self):
+        liveUrl = self.liveUrl.strip('/')
         st = liveUrl.split('/')
         st = st[len(st) - 1]
         res = requests.get(url=liveUrl, headers=self.headers)
@@ -56,32 +61,26 @@ class Tool:
         text = json.loads(text)
         self.userLiveInfo = text['clients']['graphqlServerClient'][userTag]
         self.liveRoomId = self.userLiveInfo['liveStream']['json']['liveStreamId']
-        if self.liveRoomId is None:
+        if self.liveRoomId == '':
             raise RuntimeError('liveRoomId获取失败')
         return self.liveRoomId
 
     # 获取主播直播信息 （主播个人信息，直播地址，房间号等等）
-    def getAnchorInfo(self, liveUrl: str):
-        self.getLiveRoomId(liveUrl)
+    def getAnchorInfo(self):
+        self.getLiveRoomId()
         return self.userLiveInfo
 
     # 获取直播websocket信息
     def getWebSocketInfo(self, liveRoomId):
-        head = self.headers
-        head['content-type'] = 'application/json'
-        data = {
-            'operationName': 'WebSocketInfoQuery',
-            'variables': {
-                'liveStreamId': liveRoomId
-            },
-            'query': 'query WebSocketInfoQuery($liveStreamId: String) {\n  webSocketInfo(liveStreamId: $liveStreamId) {\n    token\n    webSocketUrls\n    __typename\n  }\n}\n'
+        variables = {
+            'liveStreamId': liveRoomId
         }
-        res = requests.post(url=self.apiHost, data=json.dumps(data), headers=head).json()
-        return res
+        query = 'query WebSocketInfoQuery($liveStreamId: String) {\n  webSocketInfo(liveStreamId: $liveStreamId) {\n    token\n    webSocketUrls\n    __typename\n  }\n}\n'
+        return self.liveGraphql('WebSocketInfoQuery', variables, query)
 
     # 启动websocket服务
-    def wssServerStart(self, liveUrl):
-        rid = self.getLiveRoomId(liveUrl)
+    def wssServerStart(self):
+        rid = self.getLiveRoomId()
         wssInfo = self.getWebSocketInfo(rid)
         self.token = wssInfo['data']['webSocketInfo']['token']
         self.webSocketUrl = wssInfo['data']['webSocketInfo']['webSocketUrls'][0]
@@ -193,12 +192,58 @@ class Tool:
     def getPageId(self):
         # js 中获取到该值的组成字符串
         charset = "bjectSymhasOwnProp-0123456789ABCDEFGHIJKLMNQRTUVWXYZ_dfgiklquvxz"
-        page_id = ""
+        pageId = ""
         for _ in range(0, 16):
-            page_id += random.choice(charset)
-        page_id += "_"
-        page_id += str(int(time.time() * 1000))
-        return page_id
+            pageId += random.choice(charset)
+        pageId += "_"
+        pageId += str(int(time.time() * 1000))
+        return pageId
+
+    # content内容 liveStreamId房间号 color字幕颜色
+    def sendMsg(self, content: str, liveStreamId=None, color=None):
+        variables = {
+            'color': color,
+            'content': content,
+            'liveStreamId': liveStreamId
+        }
+        query = 'mutation SendLiveComment($liveStreamId: String, $content: String, $color: String) {\n  sendLiveComment(liveStreamId: $liveStreamId, content: $content, color: $color) {\n    result\n    __typename\n  }\n}\n'
+        return self.liveGraphql('SendLiveComment', variables, query)
+
+    # 关注用户 principalId用户ID type 1关注 2取消关注
+    def follow(self, principalId=None, type=1):
+        variables = {
+            'principalId': principalId,
+            'type': type,
+        }
+        query = 'mutation UserFollow($principalId: String, $type: Int) {\n  webFollow(principalId: $principalId, type: $type) {\n    followStatus\n    __typename\n  }\n}\n'
+        return self.liveGraphql('UserFollow', variables, query)
+
+
+    # 获取用户基本信息 principalId用户ID
+    def getUserCardInfoById(self, principalId):
+        variables = {
+            'principalId': principalId,
+            'count': 3,
+        }
+        query = 'query UserCardInfoById($principalId: String, $count: Int) {\n  userCardInfo(principalId: $principalId, count: $count) {\n    id\n    originUserId\n    avatar\n    name\n    description\n    sex\n    constellation\n    cityName\n    followStatus\n    privacy\n    feeds {\n      eid\n      photoId\n      thumbnailUrl\n      timestamp\n      __typename\n    }\n    counts {\n      fan\n      follow\n      photo\n      __typename\n    }\n    __typename\n  }\n}\n'
+        return self.liveGraphql('UserCardInfoById', variables, query)
+
+    def liveGraphql(self, operationName: str, variables, query, headers=None):
+        if headers is None:
+            head = self.headers
+            head['content-type'] = 'application/json'
+        else:
+            head = headers
+
+        data = {
+            'operationName': operationName,
+            'variables': variables,
+            'query': query
+        }
+        res = requests.post(url=self.apiHost, data=json.dumps(data), headers=head).json()
+        logging.info('[liveGraphql] [操作返回数据] ｜ ' + json.dumps(res, ensure_ascii=False))
+        return res
+
 
     # 十六进制字符串转protobuf格式 （用于快手网页websocket调试分析包体结构）
     def hexStrToProtobuf(self, hexStr):
