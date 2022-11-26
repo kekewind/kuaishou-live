@@ -218,7 +218,6 @@ class Tool:
         query = 'mutation UserFollow($principalId: String, $type: Int) {\n  webFollow(principalId: $principalId, type: $type) {\n    followStatus\n    __typename\n  }\n}\n'
         return self.liveGraphql('UserFollow', variables, query)
 
-
     # 获取用户基本信息 principalId用户ID
     def getUserCardInfoById(self, principalId):
         variables = {
@@ -243,7 +242,6 @@ class Tool:
         res = requests.post(url=self.apiHost, data=json.dumps(data), headers=head).json()
         logging.info('[liveGraphql] [操作返回数据] ｜ ' + json.dumps(res, ensure_ascii=False))
         return res
-
 
     # 十六进制字符串转protobuf格式 （用于快手网页websocket调试分析包体结构）
     def hexStrToProtobuf(self, hexStr):
